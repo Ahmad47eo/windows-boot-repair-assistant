@@ -43,6 +43,14 @@ public sealed class Diagnostics
             .OrderByDescending(candidate => candidate.Score)
             .ToList();
         var selectedEfi = orderedEfi.FirstOrDefault();
+        var notes = windows.LastNotes.ToList();
+        if (!winPeResult.IsWinPe)
+        {
+            notes.Add(
+                "Windows PE was not detected. Read-only diagnostics are safe; " +
+                "repair is intended for WinPE.");
+        }
+
         var initialReport = new DiagnosticReport
         {
             Firmware = firmwareResult,
@@ -53,7 +61,7 @@ public sealed class Diagnostics
             SelectedWindows = selectedWindows,
             EfiCandidates = efiCandidates,
             SelectedEfi = selectedEfi,
-            Notes = windows.LastNotes
+            Notes = notes
         };
         var problems = string.IsNullOrWhiteSpace(initialReport.RepairBlockReason)
             ? Array.Empty<string>()

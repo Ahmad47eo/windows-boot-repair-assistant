@@ -184,6 +184,41 @@ public sealed class DiagnosticReportTests
     }
 
     [Fact]
+    public void NonGptCandidateWithoutBootDirectoryIsBlocked()
+    {
+        var windows = new WindowsInstallation(
+            "D",
+            @"D:\Windows",
+            Array.Empty<string>(),
+            Array.Empty<string>());
+        var efi = new EfiPartitionCandidate(
+            new VolumeInfo(
+                "S",
+                @"\\?\Volume{esp}\",
+                "FAT32",
+                100 * 1024 * 1024,
+                null,
+                false,
+                string.Empty),
+            50,
+            Array.Empty<string>());
+        var report = new DiagnosticReport
+        {
+            Firmware = new(FirmwareMode.Uefi, "test", string.Empty),
+            WindowsCandidates = new[] { windows },
+            SelectedWindows = windows,
+            EfiCandidates = new[] { efi },
+            SelectedEfi = efi
+        };
+
+        Assert.False(report.RepairAllowed);
+        Assert.Equal(
+            "The top EFI candidate is not GPT ESP-typed and lacks a " +
+            "Microsoft EFI boot directory; repair is blocked.",
+            report.RepairBlockReason);
+    }
+
+    [Fact]
     public void HappyIsAllowed()
     {
         Assert.True(

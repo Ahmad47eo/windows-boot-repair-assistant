@@ -405,4 +405,33 @@ public sealed class DiagnosticsTests
         Assert.Empty(report.Problems);
         Assert.Single(report.Notes);
     }
+
+    [Fact]
+    public async Task NonWinPeAddsSafetyNote()
+    {
+        var registry = new FakeRegistry { Value = 2 };
+        var environment = new FakeEnvironment
+        {
+            SystemRoot = @"C:\Windows"
+        };
+        var emptyVolumes = new FakeVolumes();
+        var diagnostics = new Diagnostics(
+            new FirmwareDetector(registry, new NullApi()),
+            new WinPeDetector(registry, environment),
+            new WindowsInstallationFinder(
+                emptyVolumes,
+                new FakeFileSystem()),
+            new EfiPartitionFinder(
+                emptyVolumes,
+                new FakeFileSystem()));
+
+        var report = await diagnostics.RunAsync(
+            CancellationToken.None);
+
+        Assert.Contains(
+            report.Notes,
+            note => note.Contains(
+                "Windows PE was not detected",
+                StringComparison.OrdinalIgnoreCase));
+    }
 }

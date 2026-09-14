@@ -48,7 +48,8 @@ public sealed class DiagnosticReport
             return top.Count > 0
                 && SelectedEfi is not null
                 && Equals(SelectedEfi, top[0])
-                && HasMinimumEfiScoreMargin(top);
+                && HasMinimumEfiScoreMargin(top)
+                && HasTrustworthyEfiStructure(top[0]);
         }
     }
 
@@ -82,6 +83,13 @@ public sealed class DiagnosticReport
                     $"EFI System Partition selection is ambiguous: top candidates " +
                     $"score {top[0].Score} and {top[1].Score} " +
                     $"(margin below {MinimumEfiScoreMargin}).";
+            }
+
+            if (!HasTrustworthyEfiStructure(top[0]))
+            {
+                return
+                    "The top EFI candidate is not GPT ESP-typed and lacks a " +
+                    "Microsoft EFI boot directory; repair is blocked.";
             }
 
             if (SelectedEfi is null)
@@ -150,5 +158,14 @@ public sealed class DiagnosticReport
             && (candidates.Count == 1
                 || candidates[0].Score - candidates[1].Score
                     >= MinimumEfiScoreMargin);
+    }
+
+    private static bool HasTrustworthyEfiStructure(
+        EfiPartitionCandidate candidate)
+    {
+        return candidate.Volume.GptPartitionType == EfiPartitionFinder.EspType
+            || candidate.Reasons.Contains(
+                "Microsoft EFI boot directory",
+                StringComparer.OrdinalIgnoreCase);
     }
 }
