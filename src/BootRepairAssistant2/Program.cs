@@ -9,9 +9,18 @@ internal static class Program
     {
         ApplicationConfiguration.Initialize();
         var fileSystem = new SystemFileSystem();
-        var logger = new BootRepairLogger(fileSystem);
-        Application.ThreadException += (_, e) => { logger.Log($"UI exception: {e.Exception}"); MessageBox.Show(e.Exception.Message, "Unexpected error", MessageBoxButtons.OK, MessageBoxIcon.Error); };
-        AppDomain.CurrentDomain.UnhandledException += (_, e) => logger.Log($"Unhandled exception: {e.ExceptionObject}");
+        var logger = new BootRepairLogger();
+        Application.ThreadException += (_, e) =>
+        {
+            logger.Log($"UI exception: {e.Exception}");
+            MessageBox.Show(
+                e.Exception.Message,
+                "Unexpected error",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Error);
+        };
+        AppDomain.CurrentDomain.UnhandledException += (_, e) =>
+            logger.Log($"Unhandled exception: {e.ExceptionObject}");
         var registry = new WindowsRegistryReader();
         var firmware = new FirmwareDetector(registry, new WindowsFirmwareApi(), logger);
         var environment = new SystemEnvironmentInfo();
@@ -22,7 +31,21 @@ internal static class Program
         var diagnostics = new Diagnostics(firmware, winPe, windows, efi, logger);
         var backup = new BackupManager(fileSystem, logger);
         var verifier = new Verifier(fileSystem);
-        var repair = new RepairEngine(new ProcessRunner(), backup, verifier, diagnostics, firmware, fileSystem, logger);
-        Application.Run(new MainForm(diagnostics, repair, verifier, logger));
+        var repair = new RepairEngine(
+            new ProcessRunner(),
+            backup,
+            verifier,
+            diagnostics,
+            firmware,
+            new WindowsVolumeMounter(),
+            environment,
+            fileSystem,
+            logger);
+        Application.Run(new MainForm(
+            diagnostics,
+            repair,
+            verifier,
+            backup,
+            logger));
     }
 }
