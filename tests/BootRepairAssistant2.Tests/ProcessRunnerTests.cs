@@ -7,9 +7,15 @@ public sealed class ProcessRunnerTests
     [Fact]
     public async Task EchoCapturesOutput()
     {
+        var fileName = OperatingSystem.IsWindows()
+            ? "cmd.exe"
+            : "/bin/echo";
+        var args = OperatingSystem.IsWindows()
+            ? new[] { "/c", "echo", "hello" }
+            : new[] { "hello" };
         var result = await new ProcessRunner().RunAsync(
-            "/bin/echo",
-            new[] { "hello" },
+            fileName,
+            args,
             TimeSpan.FromSeconds(5),
             CancellationToken.None);
 
@@ -20,9 +26,15 @@ public sealed class ProcessRunnerTests
     [Fact]
     public async Task SleepTimesOut()
     {
+        var fileName = OperatingSystem.IsWindows()
+            ? "powershell.exe"
+            : "/bin/sleep";
+        var args = OperatingSystem.IsWindows()
+            ? new[] { "-NoProfile", "-Command", "Start-Sleep -Seconds 5" }
+            : new[] { "5" };
         var result = await new ProcessRunner().RunAsync(
-            "/bin/sleep",
-            new[] { "5" },
+            fileName,
+            args,
             TimeSpan.FromMilliseconds(200),
             CancellationToken.None);
 
