@@ -59,6 +59,13 @@ internal sealed partial class MainForm : Form
                 ? BuildReport()
                 : $"Scan complete. Repair allowed: {report.RepairAllowed}{Environment.NewLine}" +
                   report.RepairBlockReason;
+            if (!report.RepairAllowed)
+            {
+                output.AppendText(
+                    Environment.NewLine +
+                    $"Repair blocked: {report.RepairBlockReason}");
+            }
+
             repairButton.Enabled = report.RepairAllowed;
         });
     }

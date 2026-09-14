@@ -70,6 +70,12 @@ public sealed class BootRepairLogger : ILogSink
                     $"  {FormatVolume(volume)}");
             }
 
+            builder.AppendLine("Notes:");
+            foreach (var note in report.Notes)
+            {
+                builder.AppendLine($"Note: {note}");
+            }
+
             builder.AppendLine("Windows candidates:");
             foreach (var candidate in report.WindowsCandidates)
             {

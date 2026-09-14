@@ -131,7 +131,7 @@ public sealed class WindowsInstallationFinderTests
         finder.Find("X");
 
         Assert.Contains(
-            finder.LastProblems,
+            finder.LastNotes,
             problem => problem.Contains(
                 "possibly BitLocker-locked or unformatted",
                 StringComparison.OrdinalIgnoreCase));
@@ -155,7 +155,7 @@ public sealed class WindowsInstallationFinderTests
         finder.Find("X");
 
         Assert.Contains(
-            finder.LastProblems,
+            finder.LastNotes,
             problem => problem.Contains(
                 "possibly BitLocker-locked or unformatted",
                 StringComparison.OrdinalIgnoreCase));
@@ -334,13 +334,11 @@ public sealed class DiagnosticsTests
             CancellationToken.None);
 
         Assert.Contains(
-            report.Problems,
-            problem => problem.Contains(
-                @"\\?\Volume{data}\",
+            report.VolumesExamined,
+            examined => examined.VolumeGuidPath.Contains(
+                "Volume{data}",
                 StringComparison.OrdinalIgnoreCase));
-        Assert.Contains(
-            "Volumes examined:",
-            report.Problems);
+        Assert.Single(report.Problems);
     }
 
     [Fact]
@@ -369,5 +367,42 @@ public sealed class DiagnosticsTests
         };
 
         Assert.Equal(StatusLevel.Ok, report.EfiStatus);
+    }
+
+    [Fact]
+    public void BitLockerNoteDoesNotBlockRepair()
+    {
+        var windows = new WindowsInstallation(
+            "D",
+            @"D:\Windows",
+            Array.Empty<string>(),
+            Array.Empty<string>());
+        var efi = new EfiPartitionCandidate(
+            new VolumeInfo(
+                "S",
+                @"\\?\Volume{esp}\",
+                "FAT32",
+                100 * 1024 * 1024,
+                EfiPartitionFinder.EspType,
+                true,
+                string.Empty),
+            100,
+            Array.Empty<string>());
+        var report = new DiagnosticReport
+        {
+            Firmware = new(FirmwareMode.Uefi, "test", string.Empty),
+            WindowsCandidates = new[] { windows },
+            SelectedWindows = windows,
+            EfiCandidates = new[] { efi },
+            SelectedEfi = efi,
+            Notes = new[]
+            {
+                "Volume D possibly BitLocker-locked or unformatted"
+            }
+        };
+
+        Assert.True(report.RepairAllowed);
+        Assert.Empty(report.Problems);
+        Assert.Single(report.Notes);
     }
 }

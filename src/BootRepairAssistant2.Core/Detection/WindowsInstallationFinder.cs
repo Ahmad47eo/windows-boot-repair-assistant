@@ -9,7 +9,7 @@ public sealed class WindowsInstallationFinder
     public IReadOnlyList<VolumeInfo> LastExaminedVolumes { get; private set; } =
         Array.Empty<VolumeInfo>();
 
-    public IReadOnlyList<string> LastProblems { get; private set; } =
+    public IReadOnlyList<string> LastNotes { get; private set; } =
         Array.Empty<string>();
 
     public WindowsInstallationFinder(
@@ -115,7 +115,7 @@ public sealed class WindowsInstallationFinder
         }
 
         LastExaminedVolumes = examined;
-        LastProblems = problems;
+        LastNotes = problems;
         log.Log(
             $"Windows candidates: " +
             $"{result.Count(candidate => candidate.IsValid)} valid / " +

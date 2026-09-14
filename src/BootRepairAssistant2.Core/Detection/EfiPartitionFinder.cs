@@ -123,6 +123,10 @@ public sealed class EfiPartitionFinder
 
             if (score >= 30)
             {
+                var displayVolume = drive ?? volume.VolumeGuidPath;
+                log.Log(
+                    $"Volume {displayVolume} score={score:D2}: " +
+                    $"{string.Join(", ", reasons)}");
                 candidates.Add(new EfiPartitionCandidate(
                     volume,
                     score,

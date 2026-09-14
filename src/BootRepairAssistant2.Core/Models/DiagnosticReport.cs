@@ -2,6 +2,8 @@ namespace BootRepairAssistant2.Core;
 
 public sealed class DiagnosticReport
 {
+    public const int MinimumEfiScoreMargin = 15;
+
     public FirmwareDetectionResult Firmware { get; init; } =
         new(FirmwareMode.Unknown, "None", "Not scanned");
 
@@ -24,6 +26,8 @@ public sealed class DiagnosticReport
 
     public IReadOnlyList<string> Problems { get; init; } = Array.Empty<string>();
 
+    public IReadOnlyList<string> Notes { get; init; } = Array.Empty<string>();
+
     public DateTime GeneratedAt { get; init; } = DateTime.Now;
 
     public bool RepairAllowed
@@ -40,14 +44,11 @@ public sealed class DiagnosticReport
                 return false;
             }
 
-            var top = EfiCandidates
-                .Where(candidate => candidate.Score >= 30)
-                .OrderByDescending(candidate => candidate.Score)
-                .ToList();
-
-            return top.Count == 1
+            var top = QualifiedEfiCandidates();
+            return top.Count > 0
                 && SelectedEfi is not null
-                && Equals(SelectedEfi, top[0]);
+                && Equals(SelectedEfi, top[0])
+                && HasMinimumEfiScoreMargin(top);
         }
     }
 
@@ -68,19 +69,19 @@ public sealed class DiagnosticReport
                     : "Multiple valid Windows installations were found.";
             }
 
-            var top = EfiCandidates
-                .Where(candidate => candidate.Score >= 30)
-                .OrderByDescending(candidate => candidate.Score)
-                .ToList();
+            var top = QualifiedEfiCandidates();
 
             if (top.Count == 0)
             {
                 return "No sufficiently trustworthy EFI System Partition candidate was found.";
             }
 
-            if (top.Count > 1 && top[0].Score == top[1].Score)
+            if (!HasMinimumEfiScoreMargin(top))
             {
-                return "EFI System Partition selection is ambiguous because top candidates tie.";
+                return
+                    $"EFI System Partition selection is ambiguous: top candidates " +
+                    $"score {top[0].Score} and {top[1].Score} " +
+                    $"(margin below {MinimumEfiScoreMargin}).";
             }
 
             if (SelectedEfi is null)
@@ -121,14 +122,11 @@ public sealed class DiagnosticReport
                 return StatusLevel.Error;
             }
 
-            var top = EfiCandidates
-                .OrderByDescending(candidate => candidate.Score)
-                .ToList();
-            var ambiguous = top.Count > 1
-                && top[0].Score == top[1].Score;
+            var top = QualifiedEfiCandidates();
             return SelectedEfi is not null
+                && top.Count > 0
                 && Equals(SelectedEfi, top[0])
-                && !ambiguous
+                && HasMinimumEfiScoreMargin(top)
                 ? StatusLevel.Ok
                 : StatusLevel.Warning;
         }
@@ -136,4 +134,21 @@ public sealed class DiagnosticReport
 
     public StatusLevel EnvironmentStatus =>
         IsWinPe ? StatusLevel.Ok : StatusLevel.Warning;
+
+    private List<EfiPartitionCandidate> QualifiedEfiCandidates()
+    {
+        return EfiCandidates
+            .Where(candidate => candidate.Score >= 30)
+            .OrderByDescending(candidate => candidate.Score)
+            .ToList();
+    }
+
+    private static bool HasMinimumEfiScoreMargin(
+        IReadOnlyList<EfiPartitionCandidate> candidates)
+    {
+        return candidates.Count > 0
+            && (candidates.Count == 1
+                || candidates[0].Score - candidates[1].Score
+                    >= MinimumEfiScoreMargin);
+    }
 }

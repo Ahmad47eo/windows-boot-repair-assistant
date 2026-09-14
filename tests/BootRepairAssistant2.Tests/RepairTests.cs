@@ -142,6 +142,48 @@ public sealed class DiagnosticReportTests
     }
 
     [Fact]
+    public void StrongLeaderWithQualifiedRunnerUpIsAllowed()
+    {
+        var leader = Efi("S") with { Score = 100 };
+        var runnerUp = Efi("T") with { Score = 35 };
+
+        var report = Report(
+            FirmwareMode.Uefi,
+            leader,
+            runnerUp);
+
+        Assert.True(report.RepairAllowed);
+        Assert.Equal(StatusLevel.Ok, report.EfiStatus);
+    }
+
+    [Fact]
+    public void EqualTopScoresAreBlockedWithAmbiguousReason()
+    {
+        var report = Report(
+            FirmwareMode.Uefi,
+            Efi("S") with { Score = 100 },
+            Efi("T") with { Score = 100 });
+
+        Assert.False(report.RepairAllowed);
+        Assert.Contains(
+            "ambiguous",
+            report.RepairBlockReason,
+            StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void InsufficientScoreMarginIsBlocked()
+    {
+        var report = Report(
+            FirmwareMode.Uefi,
+            Efi("S") with { Score = 50 },
+            Efi("T") with { Score = 40 });
+
+        Assert.False(report.RepairAllowed);
+        Assert.Equal(StatusLevel.Warning, report.EfiStatus);
+    }
+
+    [Fact]
     public void HappyIsAllowed()
     {
         Assert.True(
