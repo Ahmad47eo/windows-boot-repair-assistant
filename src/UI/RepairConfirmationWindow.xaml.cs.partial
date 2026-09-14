@@ -1,0 +1,26 @@
+using System.Windows;
+using WindowsBootRepair.UI;
+
+namespace WindowsBootRepair
+{
+    public partial class RepairConfirmationWindow : Window
+    {
+        public RepairConfirmationWindow()
+        {
+            InitializeComponent();
+        }
+
+        private void ConfirmBtn_Click(object sender, RoutedEventArgs e)
+        {
+            UserInput = ConfirmationInput.Text;
+            DialogResult = (UserInput == "REPAIR");
+            Close();
+        }
+
+        private void CancelBtn_Click(object sender, RoutedEventArgs e)
+        {
+            DialogResult = false;
+            Close();
+        }
+    }
+}
