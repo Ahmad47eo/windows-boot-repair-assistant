@@ -11,38 +11,37 @@ public sealed class Verifier
         this.fileSystem = fileSystem;
     }
 
-    public VerificationResult Verify(string efiLetter)
+    public VerificationResult Verify(string rootPath)
     {
-        if (!Regex.IsMatch(efiLetter, "^[A-Za-z]$"))
+        var root = NormalizeRoot(rootPath);
+        if (root is null)
         {
             throw new ArgumentException(
-                "EFI drive letter must be a single character.",
-                nameof(efiLetter));
+                "EFI root must be a drive root or volume GUID path.",
+                nameof(rootPath));
         }
 
-        var root = efiLetter.ToUpperInvariant() +
-            @":\EFI\Microsoft\Boot";
+        var bootRoot = CombineRoot(root, @"EFI\Microsoft\Boot");
         var checks = new List<(string Check, bool Passed, string Detail)>();
 
-        var bootmgfw = Required("bootmgfw.efi", root, checks);
-        var bcd = Required("BCD", root, checks);
+        var bootmgfw = Required("bootmgfw.efi", bootRoot, checks);
+        var bcd = Required("BCD", bootRoot, checks);
         var bootmgr = fileSystem.FileExists(
-            Path.Combine(root, "bootmgr.efi"));
+            CombineRoot(bootRoot, "bootmgr.efi"));
         checks.Add((
             "bootmgr.efi",
             bootmgr,
             bootmgr ? "present" : "missing (optional)"));
 
         var fallback = fileSystem.FileExists(
-            efiLetter.ToUpperInvariant() +
-            @":\EFI\Boot\bootx64.efi");
+            CombineRoot(root, @"EFI\Boot\bootx64.efi"));
         checks.Add((
             "bootx64.efi",
             fallback,
             fallback ? "present" : "missing (optional)"));
 
         var nonEmpty = bcd
-            && fileSystem.GetFileLength(Path.Combine(root, "BCD")) > 0;
+            && fileSystem.GetFileLength(CombineRoot(bootRoot, "BCD")) > 0;
         checks.Add((
             "BCD non-empty",
             nonEmpty,
@@ -58,16 +57,48 @@ public sealed class Verifier
         return new VerificationResult(outcome, checks);
     }
 
+    private static string? NormalizeRoot(string rootPath)
+    {
+        if (Regex.IsMatch(rootPath, "^[A-Za-z]$"))
+        {
+            return rootPath.ToUpperInvariant() + @":\";
+        }
+
+        if (rootPath.StartsWith(
+                @"\\?\Volume{",
+                StringComparison.OrdinalIgnoreCase)
+            && !rootPath.EndsWith('\\'))
+        {
+            return rootPath + '\\';
+        }
+
+        if (rootPath.EndsWith('\\'))
+        {
+            return rootPath;
+        }
+
+        return rootPath.Contains(':')
+            ? rootPath + '\\'
+            : null;
+    }
+
     private bool Required(
         string name,
         string root,
         List<(string Check, bool Passed, string Detail)> checks)
     {
-        var present = fileSystem.FileExists(Path.Combine(root, name));
+        var present = fileSystem.FileExists(CombineRoot(root, name));
         checks.Add((
             name,
             present,
             present ? "present" : "missing (required)"));
         return present;
+    }
+
+    private static string CombineRoot(string root, string relativePath)
+    {
+        return root.TrimEnd('\\', '/')
+            + "\\"
+            + relativePath.TrimStart('\\', '/');
     }
 }

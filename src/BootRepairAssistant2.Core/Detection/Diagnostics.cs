@@ -29,18 +29,21 @@ public sealed class Diagnostics
         var winPeResult = winPe.Detect();
         var windowsCandidates = windows.Find(
             winPeResult.IsWinPe ? "X" : null);
+        var volumesExamined = windows.LastExaminedVolumes;
         var validWindows = windowsCandidates
             .Where(candidate => candidate.IsValid)
             .ToList();
         var selectedWindows = validWindows.Count == 1
             ? validWindows[0]
             : null;
-        var efiCandidates = efi.Find(selectedWindows?.DriveLetter);
+        var efiCandidates = efi.Find(
+            selectedWindows?.DriveLetter,
+            selectedWindows?.VolumeGuidPath);
         var orderedEfi = efiCandidates
             .OrderByDescending(candidate => candidate.Score)
             .ToList();
         var selectedEfi = orderedEfi.FirstOrDefault();
-        var problems = new List<string>();
+        var problems = windows.LastProblems.ToList();
 
         if (firmwareResult.Mode != FirmwareMode.Uefi)
         {
@@ -52,6 +55,8 @@ public sealed class Diagnostics
         {
             problems.Add(
                 "No valid Windows installation was found; required system markers are missing. Repair is blocked.");
+            problems.Add("Volumes examined:");
+            problems.AddRange(volumesExamined.Select(FormatVolume));
         }
         else if (validWindows.Count > 1)
         {
@@ -90,6 +95,7 @@ public sealed class Diagnostics
             Firmware = firmwareResult,
             IsWinPe = winPeResult.IsWinPe,
             WinPeDetails = winPeResult.Details,
+            VolumesExamined = volumesExamined,
             WindowsCandidates = windowsCandidates,
             SelectedWindows = selectedWindows,
             EfiCandidates = efiCandidates,
@@ -99,5 +105,22 @@ public sealed class Diagnostics
         log.Log(
             $"Diagnostics completed: RepairAllowed={report.RepairAllowed}; {report.Problems.Count} problem(s).");
         return Task.FromResult(report);
+    }
+
+    private static string FormatVolume(VolumeInfo volume)
+    {
+        var drive = string.IsNullOrWhiteSpace(volume.DriveLetter)
+            ? "(no letter)"
+            : volume.DriveLetter;
+        var fileSystem = string.IsNullOrWhiteSpace(volume.FileSystem)
+            ? "unknown"
+            : volume.FileSystem;
+        var label = string.IsNullOrWhiteSpace(volume.Label)
+            ? "unknown"
+            : volume.Label;
+        return
+            $"  {drive} {volume.VolumeGuidPath} " +
+            $"fs={fileSystem} size={volume.SizeBytes / (1024 * 1024)} MB " +
+            $"label={label}";
     }
 }

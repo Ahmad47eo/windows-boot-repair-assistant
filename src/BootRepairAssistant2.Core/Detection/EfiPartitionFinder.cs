@@ -9,12 +9,14 @@ public sealed class EfiPartitionFinder
     private readonly IFileSystem fileSystem;
     private readonly ILogSink log;
     private readonly string? windowsDrive;
+    private readonly string? windowsVolumeGuidPath;
 
     public EfiPartitionFinder(
         IVolumeProvider volumes,
         IFileSystem fileSystem,
         ILogSink? log = null,
-        string? windowsDrive = null)
+        string? windowsDrive = null,
+        string? windowsVolumeGuidPath = null)
     {
         this.volumes = volumes;
         this.fileSystem = fileSystem;
@@ -22,10 +24,12 @@ public sealed class EfiPartitionFinder
         this.windowsDrive = windowsDrive?
             .TrimEnd(':')
             .ToUpperInvariant();
+        this.windowsVolumeGuidPath = windowsVolumeGuidPath;
     }
 
     public IReadOnlyList<EfiPartitionCandidate> Find(
-        string? windowsDriveOverride = null)
+        string? windowsDriveOverride = null,
+        string? windowsVolumeGuidOverride = null)
     {
         var candidates = new List<EfiPartitionCandidate>();
         var excludedWindowsDrive = windowsDriveOverride?
@@ -67,17 +71,17 @@ public sealed class EfiPartitionFinder
             }
 
             var root = drive is null
-                ? volume.VolumeGuidPath
+                ? EnsureTrailingSeparator(volume.VolumeGuidPath)
                 : drive + @":\";
             if (fileSystem.DirectoryExists(
-                    Path.Combine(root, @"EFI\Microsoft\Boot")))
+                    CombineRoot(root, @"EFI\Microsoft\Boot")))
             {
                 score += 15;
                 reasons.Add("Microsoft EFI boot directory");
             }
 
             if (fileSystem.FileExists(
-                    Path.Combine(root, @"EFI\Boot\bootx64.efi")))
+                    CombineRoot(root, @"EFI\Boot\bootx64.efi")))
             {
                 score += 5;
                 reasons.Add("fallback bootx64.efi");
@@ -92,8 +96,20 @@ public sealed class EfiPartitionFinder
                 reasons.Add("NTFS is not an EFI filesystem");
             }
 
-            if (excludedWindowsDrive is not null
-                && drive == excludedWindowsDrive)
+            var isWindowsVolume = excludedWindowsDrive is not null
+                && drive == excludedWindowsDrive;
+            var excludedWindowsVolumeGuid =
+                windowsVolumeGuidOverride ?? windowsVolumeGuidPath;
+            if (excludedWindowsVolumeGuid is not null
+                && string.Equals(
+                    volume.VolumeGuidPath,
+                    excludedWindowsVolumeGuid,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                isWindowsVolume = true;
+            }
+
+            if (isWindowsVolume)
             {
                 score -= 100;
                 reasons.Add("Windows installation volume");
@@ -118,5 +134,19 @@ public sealed class EfiPartitionFinder
         return candidates
             .OrderByDescending(candidate => candidate.Score)
             .ToList();
+    }
+
+    private static string EnsureTrailingSeparator(string path)
+    {
+        return path.EndsWith('\\') || path.EndsWith('/')
+            ? path
+            : path + '\\';
+    }
+
+    private static string CombineRoot(string root, string relativePath)
+    {
+        return root.TrimEnd('\\', '/')
+            + "\\"
+            + relativePath.TrimStart('\\', '/');
     }
 }

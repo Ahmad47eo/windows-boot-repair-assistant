@@ -15,15 +15,16 @@ public sealed class BackupManager
 
     public string ResolveBackupBase(DiagnosticReport report)
     {
-        var windowsDrive = report.SelectedWindows?.DriveLetter
-            ?? throw new InvalidOperationException(
-                "A selected Windows installation is required for backup.");
-        var bases = new[]
+        var bases = new List<string>();
+        if (report.SelectedWindows?.DriveLetter is string windowsDrive)
         {
-            $"{windowsDrive}:\\BootRepairAssistant2\\Backups",
-            Path.Combine(AppContext.BaseDirectory, "Backups"),
-            Path.Combine(Path.GetTempPath(), "BootRepairAssistant2", "Backups")
-        };
+            bases.Add(
+                $"{windowsDrive.TrimEnd(':')}:\\BootRepairAssistant2\\Backups");
+        }
+
+        bases.Add(Path.Combine(AppContext.BaseDirectory, "Backups"));
+        bases.Add(
+            Path.Combine(Path.GetTempPath(), "BootRepairAssistant2", "Backups"));
 
         var basePath = bases.FirstOrDefault(IsWritable);
         if (basePath is null)

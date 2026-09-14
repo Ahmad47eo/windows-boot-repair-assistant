@@ -43,14 +43,27 @@ public sealed class RepairEngine
         }
 
         var windowsPath = report.SelectedWindows.WindowsPath;
+        var windowsLetter = report.SelectedWindows.DriveLetter?
+            .TrimEnd(':');
         var efiLetter = report.SelectedEfi.Volume.DriveLetter?
             .TrimEnd(':');
-        if (efiLetter is null)
+        if (windowsLetter is null || efiLetter is null)
         {
+            var windowsPlaceholder = windowsLetter is null
+                ? "<letter>:\\Windows"
+                : windowsPath;
+            var efiPlaceholder = efiLetter is null
+                ? "<letter>:"
+                : efiLetter + ":";
+            var missing = windowsLetter is null && efiLetter is null
+                ? $"Windows volume {report.SelectedWindows.VolumeGuidPath} and " +
+                  $"EFI volume {report.SelectedEfi.Volume.VolumeGuidPath} have no drive letters"
+                : windowsLetter is null
+                    ? $"Windows volume {report.SelectedWindows.VolumeGuidPath} has no drive letter"
+                    : $"EFI volume {report.SelectedEfi.Volume.VolumeGuidPath} has no drive letter";
             return
-                $"Test Mode: EFI volume {report.SelectedEfi.Volume.VolumeGuidPath} has no drive letter; " +
-                $"Repair would temporarily assign a free letter and run: " +
-                $"bcdboot {windowsPath} /s <letter>: /f UEFI";
+                $"Test Mode: {missing}; Repair would temporarily assign a free letter " +
+                $"and run: bcdboot {windowsPlaceholder} /s {efiPlaceholder} /f UEFI";
         }
 
         var command = BuildCommand(windowsPath, efiLetter);
@@ -108,8 +121,10 @@ public sealed class RepairEngine
         progress?.Report($"Backup created: {backupDirectory}");
         var efiLetter = report.SelectedEfi!.Volume.DriveLetter?
             .TrimEnd(':');
+        var windowsLetter = report.SelectedWindows!.DriveLetter?
+            .TrimEnd(':');
 
-        if (efiLetter is null && testMode)
+        if ((efiLetter is null || windowsLetter is null) && testMode)
         {
             return new RepairResult(
                 RepairOutcome.NotRun,
@@ -132,66 +147,84 @@ public sealed class RepairEngine
                 "Repair cancelled before bcdboot.");
         }
 
-        var assignedLetter = false;
-        if (efiLetter is null)
-        {
-            efiLetter = mounter.AssignLetter(
-                report.SelectedEfi.Volume.VolumeGuidPath);
-            if (efiLetter is null)
-            {
-                return new RepairResult(
-                    RepairOutcome.Failed,
-                    backupDirectory,
-                    null,
-                    null,
-                    null,
-                    "EFI has no drive letter and no free temporary drive letter could be assigned.");
-            }
-
-            assignedLetter = true;
-            log.Log(
-                $"Temporarily assigned EFI volume {report.SelectedEfi.Volume.VolumeGuidPath} to {efiLetter}:");
-        }
-
-        var command = BuildCommand(
-            report.SelectedWindows!.WindowsPath,
-            efiLetter);
-        var systemBcdBoot = Path.Combine(
-            environment.SystemRoot,
-            "System32",
-            "bcdboot.exe");
-        var fileName = fileSystem.FileExists(systemBcdBoot)
-            ? systemBcdBoot
-            : command.FileName;
-
-        if (testMode)
-        {
-            var planned = new CommandResult(
-                fileName,
-                command.Arguments,
-                null,
-                string.Empty,
-                string.Empty,
-                false,
-                false,
-                TimeSpan.Zero);
-            if (assignedLetter)
-            {
-                mounter.RemoveLetter(efiLetter);
-                log.Log($"Removed temporary EFI drive letter {efiLetter}:");
-            }
-
-            return new RepairResult(
-                RepairOutcome.NotRun,
-                backupDirectory,
-                planned,
-                null,
-                null,
-                $"Test Mode: would run {planned.DisplayCommand}. Backup was created; no boot changes were made.");
-        }
-
+        var assignedWindowsLetter = false;
+        var assignedEfiLetter = false;
         try
         {
+            if (windowsLetter is null)
+            {
+                windowsLetter = mounter.AssignLetter(
+                    report.SelectedWindows.VolumeGuidPath);
+                if (windowsLetter is null)
+                {
+                    return new RepairResult(
+                        RepairOutcome.Failed,
+                        backupDirectory,
+                        null,
+                        null,
+                        null,
+                        "Windows volume has no drive letter and no free temporary drive letter could be assigned.");
+                }
+
+                windowsLetter = windowsLetter.TrimEnd(':');
+                assignedWindowsLetter = true;
+                log.Log(
+                    $"Temporarily assigned Windows volume {report.SelectedWindows.VolumeGuidPath} to {windowsLetter}:");
+            }
+
+            if (efiLetter is null)
+            {
+                efiLetter = mounter.AssignLetter(
+                    report.SelectedEfi.Volume.VolumeGuidPath);
+                if (efiLetter is null)
+                {
+                    return new RepairResult(
+                        RepairOutcome.Failed,
+                        backupDirectory,
+                        null,
+                        null,
+                        null,
+                        "EFI has no drive letter and no free temporary drive letter could be assigned.");
+                }
+
+                efiLetter = efiLetter.TrimEnd(':');
+                assignedEfiLetter = true;
+                log.Log(
+                    $"Temporarily assigned EFI volume {report.SelectedEfi.Volume.VolumeGuidPath} to {efiLetter}:");
+            }
+
+            var windowsPath = windowsLetter + @":\Windows";
+            var command = BuildCommand(
+                windowsPath,
+                efiLetter);
+            var systemBcdBoot = Path.Combine(
+                environment.SystemRoot,
+                "System32",
+                "bcdboot.exe");
+            var fileName = fileSystem.FileExists(systemBcdBoot)
+                ? systemBcdBoot
+                : command.FileName;
+
+            if (testMode)
+            {
+                var planned = new CommandResult(
+                    fileName,
+                    command.Arguments,
+                    null,
+                    string.Empty,
+                    string.Empty,
+                    false,
+                    false,
+                    TimeSpan.Zero);
+                return new RepairResult(
+                    RepairOutcome.NotRun,
+                    backupDirectory,
+                    planned,
+                    null,
+                    null,
+                    $"Test Mode: would run {planned.DisplayCommand}. Backup was created; no boot changes were made.");
+            }
+
             var commandResult = await runner.RunAsync(
                 fileName,
                 command.Arguments,
@@ -209,7 +242,7 @@ public sealed class RepairEngine
                     "Repair cancelled after bcdboot completed; verification was not started.");
             }
 
-            var verification = verifier.Verify(efiLetter);
+            var verification = verifier.Verify(efiLetter + @":\");
             var postScan = await diagnostics.RunAsync(CancellationToken.None);
             var outcome = commandResult.ExitCode == 0
                 ? verification.Outcome
@@ -227,10 +260,23 @@ public sealed class RepairEngine
         }
         finally
         {
-            if (assignedLetter)
+            if (assignedEfiLetter)
             {
-                mounter.RemoveLetter(efiLetter);
-                log.Log($"Removed temporary EFI drive letter {efiLetter}:");
+                if (efiLetter is not null)
+                {
+                    mounter.RemoveLetter(efiLetter);
+                    log.Log($"Removed temporary EFI drive letter {efiLetter}:");
+                }
+            }
+
+            if (assignedWindowsLetter)
+            {
+                if (windowsLetter is not null)
+                {
+                    mounter.RemoveLetter(windowsLetter);
+                    log.Log(
+                        $"Removed temporary Windows drive letter {windowsLetter}:");
+                }
             }
         }
     }

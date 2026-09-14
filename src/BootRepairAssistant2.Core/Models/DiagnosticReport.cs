@@ -9,6 +9,9 @@ public sealed class DiagnosticReport
 
     public string WinPeDetails { get; init; } = string.Empty;
 
+    public IReadOnlyList<VolumeInfo> VolumesExamined { get; init; } =
+        Array.Empty<VolumeInfo>();
+
     public IReadOnlyList<WindowsInstallation> WindowsCandidates { get; init; } =
         Array.Empty<WindowsInstallation>();
 
@@ -109,12 +112,27 @@ public sealed class DiagnosticReport
                 ? StatusLevel.Warning
                 : StatusLevel.Error;
 
-    public StatusLevel EfiStatus =>
-        RepairAllowed
-            ? StatusLevel.Ok
-            : EfiCandidates.Count > 0
-                ? StatusLevel.Warning
-                : StatusLevel.Error;
+    public StatusLevel EfiStatus
+    {
+        get
+        {
+            if (EfiCandidates.Count == 0)
+            {
+                return StatusLevel.Error;
+            }
+
+            var top = EfiCandidates
+                .OrderByDescending(candidate => candidate.Score)
+                .ToList();
+            var ambiguous = top.Count > 1
+                && top[0].Score == top[1].Score;
+            return SelectedEfi is not null
+                && Equals(SelectedEfi, top[0])
+                && !ambiguous
+                ? StatusLevel.Ok
+                : StatusLevel.Warning;
+        }
+    }
 
     public StatusLevel EnvironmentStatus =>
         IsWinPe ? StatusLevel.Ok : StatusLevel.Warning;

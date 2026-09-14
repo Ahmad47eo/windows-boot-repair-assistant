@@ -63,6 +63,26 @@ public sealed class BootRepairLogger : ILogSink
                 $"Firmware: {report.Firmware.Mode} ({report.Firmware.Details})");
             builder.AppendLine(
                 $"WinPE: {report.IsWinPe} ({report.WinPeDetails})");
+            builder.AppendLine("Volumes examined:");
+            foreach (var volume in report.VolumesExamined)
+            {
+                builder.AppendLine(
+                    $"  {FormatVolume(volume)}");
+            }
+
+            builder.AppendLine("Windows candidates:");
+            foreach (var candidate in report.WindowsCandidates)
+            {
+                builder.AppendLine(
+                    $"  {candidate.WindowsPath} " +
+                    $"({candidate.VolumeGuidPath}) " +
+                    $"valid={candidate.IsValid}");
+                builder.AppendLine(
+                    $"    Markers found: {FormatMarkers(candidate.MarkersFound)}");
+                builder.AppendLine(
+                    $"    Markers missing: {FormatMarkers(candidate.MarkersMissing)}");
+            }
+
             builder.AppendLine(
                 $"Windows: {report.SelectedWindows?.WindowsPath ?? "none"}");
             builder.AppendLine(
@@ -99,5 +119,28 @@ public sealed class BootRepairLogger : ILogSink
         builder.AppendLine("Log:");
         builder.AppendLine(GetLogText());
         return builder.ToString();
+    }
+
+    private static string FormatVolume(VolumeInfo volume)
+    {
+        var drive = string.IsNullOrWhiteSpace(volume.DriveLetter)
+            ? "(no letter)"
+            : volume.DriveLetter;
+        var fileSystem = string.IsNullOrWhiteSpace(volume.FileSystem)
+            ? "unknown"
+            : volume.FileSystem;
+        var label = string.IsNullOrWhiteSpace(volume.Label)
+            ? "unknown"
+            : volume.Label;
+        return
+            $"{drive} {volume.VolumeGuidPath} fs={fileSystem} " +
+            $"size={volume.SizeBytes / (1024 * 1024)} MB label={label}";
+    }
+
+    private static string FormatMarkers(IReadOnlyList<string> markers)
+    {
+        return markers.Count == 0
+            ? "none"
+            : string.Join(", ", markers);
     }
 }

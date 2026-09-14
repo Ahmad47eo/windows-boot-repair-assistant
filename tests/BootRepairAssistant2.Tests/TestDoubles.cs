@@ -176,17 +176,23 @@ internal sealed class FakeMounter : IVolumeMounter
 
     public int RemoveCalls { get; private set; }
 
+    public List<string> AssignedVolumes { get; } = new();
+
+    public List<string> RemovedLetters { get; } = new();
+
     public string? AssignedLetter { get; set; } = "Z";
 
     public string? AssignLetter(string volumeGuidPath)
     {
         AssignCalls++;
+        AssignedVolumes.Add(volumeGuidPath);
         return AssignedLetter;
     }
 
     public void RemoveLetter(string letter)
     {
         RemoveCalls++;
+        RemovedLetters.Add(letter);
     }
 }
 

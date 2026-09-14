@@ -74,6 +74,93 @@ public sealed class WindowsInstallationFinderTests
         Assert.Empty(result);
     }
 
+    [Fact]
+    public void FindsWindowsOnUnletteredVolumeByGuidPath()
+    {
+        var volume = new VolumeInfo(
+            null,
+            @"\\?\Volume{windows}\",
+            "NTFS",
+            1000,
+            null,
+            false,
+            "Windows");
+        var fileSystem = new FakeFileSystem();
+        fileSystem.Directories.Add(
+            @"\\?\Volume{windows}\Windows\System32\");
+        fileSystem.Files.Add(
+            @"\\?\Volume{windows}\Windows\System32\ntoskrnl.exe");
+        fileSystem.Files.Add(
+            @"\\?\Volume{windows}\Windows\System32\config\SYSTEM");
+        fileSystem.Files.Add(
+            @"\\?\Volume{windows}\Windows\System32\winload.efi");
+
+        var result = new WindowsInstallationFinder(
+            new FakeVolumes { Volumes = new[] { volume } },
+            fileSystem).Find("X");
+
+        Assert.Single(result);
+        Assert.Null(result[0].DriveLetter);
+        Assert.Equal(
+            @"\\?\Volume{windows}\",
+            result[0].RootPath);
+        Assert.Equal(
+            @"\\?\Volume{windows}\",
+            result[0].VolumeGuidPath);
+        Assert.Equal(
+            @"\\?\Volume{windows}\Windows",
+            result[0].WindowsPath);
+        Assert.True(result[0].IsValid);
+    }
+
+    [Fact]
+    public void RawVolumeReportsBitLockerProblem()
+    {
+        var volume = new VolumeInfo(
+            "D",
+            @"\\?\Volume{raw}\",
+            "RAW",
+            1000,
+            null,
+            false,
+            string.Empty);
+        var finder = new WindowsInstallationFinder(
+            new FakeVolumes { Volumes = new[] { volume } },
+            new FakeFileSystem());
+
+        finder.Find("X");
+
+        Assert.Contains(
+            finder.LastProblems,
+            problem => problem.Contains(
+                "possibly BitLocker-locked or unformatted",
+                StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void NullFilesystemReportsBitLockerProblem()
+    {
+        var volume = new VolumeInfo(
+            "D",
+            @"\\?\Volume{raw}\",
+            null,
+            1000,
+            null,
+            false,
+            string.Empty);
+        var finder = new WindowsInstallationFinder(
+            new FakeVolumes { Volumes = new[] { volume } },
+            new FakeFileSystem());
+
+        finder.Find("X");
+
+        Assert.Contains(
+            finder.LastProblems,
+            problem => problem.Contains(
+                "possibly BitLocker-locked or unformatted",
+                StringComparison.OrdinalIgnoreCase));
+    }
+
     private static FakeFileSystem WindowsFileSystem(string drive)
     {
         var fileSystem = new FakeFileSystem();
@@ -210,5 +297,77 @@ public sealed class EfiPartitionFinderTests
                 string.Empty),
             50,
             Array.Empty<string>());
+    }
+}
+
+public sealed class DiagnosticsTests
+{
+    [Fact]
+    public async Task ExaminedVolumesAppearWhenNoWindowsFound()
+    {
+        var volume = new VolumeInfo(
+            "D",
+            @"\\?\Volume{data}\",
+            "NTFS",
+            1000,
+            null,
+            false,
+            "Data");
+        var fileSystem = new FakeFileSystem();
+        var registry = new FakeRegistry { Value = 2 };
+        var environment = new FakeEnvironment
+        {
+            SystemRoot = @"X:\Windows"
+        };
+        var firmware = new FirmwareDetector(registry, new NullApi());
+        var diagnostics = new Diagnostics(
+            firmware,
+            new WinPeDetector(registry, environment),
+            new WindowsInstallationFinder(
+                new FakeVolumes { Volumes = new[] { volume } },
+                fileSystem),
+            new EfiPartitionFinder(
+                new FakeVolumes { Volumes = new[] { volume } },
+                fileSystem));
+
+        var report = await diagnostics.RunAsync(
+            CancellationToken.None);
+
+        Assert.Contains(
+            report.Problems,
+            problem => problem.Contains(
+                @"\\?\Volume{data}\",
+                StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(
+            "Volumes examined:",
+            report.Problems);
+    }
+
+    [Fact]
+    public void EfiStatusCanBeOkWhenWindowsIsMissing()
+    {
+        var efi = new EfiPartitionCandidate(
+            new VolumeInfo(
+                "S",
+                @"\\?\Volume{esp}\",
+                "FAT32",
+                100 * 1024 * 1024,
+                EfiPartitionFinder.EspType,
+                true,
+                string.Empty),
+            50,
+            Array.Empty<string>());
+        var report = new DiagnosticReport
+        {
+            Firmware = new(
+                FirmwareMode.Uefi,
+                "test",
+                string.Empty),
+            WindowsCandidates = Array.Empty<WindowsInstallation>(),
+            EfiCandidates = new[] { efi },
+            SelectedEfi = efi
+        };
+
+        Assert.Equal(StatusLevel.Ok, report.EfiStatus);
     }
 }

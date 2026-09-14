@@ -46,7 +46,7 @@ public sealed class VerifierTests
     {
         Assert.Equal(
             RepairOutcome.Success,
-            new Verifier(Files()).Verify("S").Outcome);
+            new Verifier(Files()).Verify(@"S:\").Outcome);
     }
 
     [Fact]
@@ -54,7 +54,7 @@ public sealed class VerifierTests
     {
         Assert.Equal(
             RepairOutcome.Warning,
-            new Verifier(Files(false)).Verify("S").Outcome);
+            new Verifier(Files(false)).Verify(@"S:\").Outcome);
     }
 
     [Fact]
@@ -62,7 +62,28 @@ public sealed class VerifierTests
     {
         Assert.Equal(
             RepairOutcome.Failed,
-            new Verifier(Files(true, false)).Verify("S").Outcome);
+            new Verifier(Files(true, false)).Verify(@"S:\").Outcome);
+    }
+
+    [Fact]
+    public void GuidRootIsAccepted()
+    {
+        var fileSystem = new FakeFileSystem();
+        fileSystem.Files.Add(
+            @"\\?\Volume{esp}\EFI\Microsoft\Boot\bootmgfw.efi");
+        fileSystem.Files.Add(
+            @"\\?\Volume{esp}\EFI\Microsoft\Boot\BCD");
+        fileSystem.Lengths[
+            @"\\?\Volume{esp}\EFI\Microsoft\Boot\BCD"] = 5;
+        fileSystem.Files.Add(
+            @"\\?\Volume{esp}\EFI\Microsoft\Boot\bootmgr.efi");
+        fileSystem.Files.Add(
+            @"\\?\Volume{esp}\EFI\Boot\bootx64.efi");
+
+        var result = new Verifier(fileSystem).Verify(
+            @"\\?\Volume{esp}\");
+
+        Assert.Equal(RepairOutcome.Success, result.Outcome);
     }
 
     private static FakeFileSystem Files(
@@ -278,6 +299,29 @@ public sealed class RepairEngineTests
     }
 
     [Fact]
+    public async Task TestModeWithUnletteredWindowsDoesNotMountOrRun()
+    {
+        var runner = new FakeRunner();
+        var mounter = new FakeMounter();
+        var engine = CreateEngine(
+            runner,
+            VerificationFiles(),
+            mounter);
+
+        var result = await engine.RepairAsync(
+            ValidReport("S", null),
+            true,
+            null,
+            CancellationToken.None);
+
+        Assert.Equal(RepairOutcome.NotRun, result.Outcome);
+        Assert.Equal(0, runner.Calls);
+        Assert.Equal(0, mounter.AssignCalls);
+        Assert.Contains("Windows volume", result.Summary);
+        Assert.Contains("<letter>:\\Windows", result.Summary);
+    }
+
+    [Fact]
     public async Task RealModeSuccessWhenVerificationPasses()
     {
         var runner = new FakeRunner();
@@ -309,6 +353,31 @@ public sealed class RepairEngineTests
             CancellationToken.None);
 
         Assert.Equal(RepairOutcome.Warning, result.Outcome);
+    }
+
+    [Fact]
+    public async Task RealModeAssignsAndRemovesUnletteredWindowsVolume()
+    {
+        var runner = new FakeRunner();
+        var mounter = new FakeMounter();
+        var engine = CreateEngine(
+            runner,
+            VerificationFiles(),
+            mounter);
+
+        var result = await engine.RepairAsync(
+            ValidReport("S", null),
+            false,
+            null,
+            CancellationToken.None);
+
+        Assert.Equal(RepairOutcome.Success, result.Outcome);
+        Assert.Equal(1, runner.Calls);
+        Assert.Equal(1, mounter.AssignCalls);
+        Assert.Equal(1, mounter.RemoveCalls);
+        Assert.Contains(
+            @"\\?\Volume{windows}\",
+            mounter.AssignedVolumes);
     }
 
     [Fact]
@@ -396,13 +465,23 @@ public sealed class RepairEngineTests
             fileSystem);
     }
 
-    private static DiagnosticReport ValidReport(string? efiLetter)
+    private static DiagnosticReport ValidReport(
+        string? efiLetter,
+        string? windowsLetter = "D")
     {
-        var windows = new WindowsInstallation(
-            "D",
-            @"D:\Windows",
-            Array.Empty<string>(),
-            Array.Empty<string>());
+        var windows = windowsLetter is null
+            ? new WindowsInstallation(
+                null,
+                @"\\?\Volume{windows}\",
+                @"\\?\Volume{windows}\",
+                Array.Empty<string>(),
+                Array.Empty<string>())
+            : new WindowsInstallation(
+                windowsLetter,
+                $@"{windowsLetter}:\",
+                @"\\?\Volume{windows}\",
+                Array.Empty<string>(),
+                Array.Empty<string>());
         var candidate = new EfiPartitionCandidate(
             new VolumeInfo(
                 efiLetter,

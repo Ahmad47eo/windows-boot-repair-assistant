@@ -106,16 +106,20 @@ internal sealed partial class MainForm : Form
 
     private async Task RunVerify()
     {
-        if (report?.SelectedEfi?.Volume.DriveLetter is not string letter)
+        if (report?.SelectedEfi is null)
         {
-            output.Text = "Verify requires a lettered EFI partition.";
+            output.Text = "Verify requires a selected EFI partition.";
             return;
         }
 
+        var efiVolume = report.SelectedEfi.Volume;
+        var root = efiVolume.DriveLetter is string letter
+            ? letter.TrimEnd(':') + @":\"
+            : EnsureTrailingSeparator(efiVolume.VolumeGuidPath);
         await RunBusy(async ct =>
         {
             var result = await Task.Run(
-                () => verifier.Verify(letter.TrimEnd(':')),
+                () => verifier.Verify(root),
                 ct);
             report = await Task.Run(
                 () => diagnostics.RunAsync(ct),
@@ -183,7 +187,8 @@ internal sealed partial class MainForm : Form
         SetDetail(
             windowsStatus,
             report.SelectedWindows is null
-                ? "No unambiguous Windows installation"
+                ? $"No valid Windows installation found on " +
+                  $"{report.VolumesExamined.Count} volume(s) — see output"
                 : $"Windows installation found: {report.SelectedWindows.WindowsPath}");
         SetDetail(
             efiStatus,
@@ -250,5 +255,12 @@ internal sealed partial class MainForm : Form
         {
             label.Text = text;
         }
+    }
+
+    private static string EnsureTrailingSeparator(string path)
+    {
+        return path.EndsWith('\\') || path.EndsWith('/')
+            ? path
+            : path + '\\';
     }
 }
